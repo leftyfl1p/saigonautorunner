@@ -1,3 +1,4 @@
+from __future__ import print_function
 import subprocess
 import time
 import requests
@@ -19,33 +20,27 @@ timeoutTimer = None
 
 #subprocess.check_output(['irecovery', '-m', '-v'], stderr=subprocess.PIPE)
 # write logging funcitons. regular vs fatal.
-# change all to check_output
+# change all to checkoutput
 
 bundleid = 'com.leftyfl1p.saigonautorunner'
-wait_period = 5
+wait_period = 45
 
 def reboot_device():
 	print("REBOOTING DEVICE")
 	# subprocess.Popen(['idevicediagnostics', 'restart'], stdout=subprocess.PIPE, stderr=subprocess.PIPE).wait()
-	UDID = subprocess.check_output(['idevice_id', '-l'], stderr=subprocess.PIPE).decode('UTF-8').rstrip()
+	UDID = subprocess.Popen(['idevice_id', '-l'], stdout=subprocess.PIPE, stderr=subprocess.PIPE).stdout.read()
 
 	if UDID:
 		command = "ideviceenterrecovery -d " + UDID
-		#subprocess.check_output(command.split(), stderr=subprocess.PIPE)
-		subprocess.Popen(command.split(), stdout=subprocess.PIPE, stderr=subprocess.PIPE).wait()
+		status = subprocess.Popen(command.split(), stdout=subprocess.PIPE, stderr=subprocess.PIPE).stdout.read()
 
-	# not sure why this is for and not while
-	status = None	
-	for x in range(1,20):
-		try:
-			status = subprocess.check_output(['irecovery', '-m', '-v'], stderr=subprocess.PIPE).decode('UTF-8').rstrip()
-		except Exception as e:
-			pass
-		if status is not None:
-			if "Recovery Mode" in status:
-				print("Kicking device out of recovery")
-				subprocess.check_output(['irecovery', '-n'], stderr=subprocess.PIPE)
-				break
+	# not sure why this is for and not while	
+	for x in xrange(1,20):
+		status = subprocess.Popen(['irecovery', '-m', '-v'], stdout=subprocess.PIPE, stderr=subprocess.PIPE).stdout.read()
+		if "Recovery Mode" in status:
+			print("Kicking device out of recovery")
+			subprocess.Popen(['irecovery', '-n'], stdout=subprocess.PIPE, stderr=subprocess.PIPE).stdout.read()
+			break
 
 def checkAlive():
 	#print("checking alive")
@@ -55,7 +50,7 @@ def checkAlive():
 		print("Application Hasn't responded, rebooting")
 		try:
 			application_process.kill()
-		except Exception as e:
+		except Exception, e:
 			pass
 		reboot_device()
 
@@ -75,6 +70,7 @@ def execute(cmd):
 	timeoutTimer = threading.Timer(600.0, application_process_timeout)
 	timeoutTimer.start()
 
+
 	for stdout_line in iter(application_process.stdout.readline, ""):
 		alive = 1
 		yield stdout_line
@@ -83,33 +79,31 @@ def execute(cmd):
 	return_code = application_process.wait()
 	if return_code:
 		print("Application process ended")
-		#global timeoutTimer
 		timeoutTimer.cancel()
 
 def wait_for_device_connection():
 	print("Waiting for device...")
 	#status = subprocess.Popen(['idevice_id', '-l'], stdout=subprocess.PIPE, stderr=subprocess.PIPE).stdout.read()
-	shown_password_prompt = False
+	password_protected = False
 	while 1:
-		local_UDID = subprocess.check_output(['idevice_id', '-l'], stderr=subprocess.PIPE)
+		local_UDID = subprocess.Popen(['idevice_id', '-l'], stdout=subprocess.PIPE, stderr=subprocess.PIPE).stdout.read()
 		if local_UDID:
 			try:
-				status = subprocess.check_output(['ideviceinfo', '-k', 'PasswordProtected'], stderr=subprocess.PIPE).decode('UTF-8').rstrip() #rstrip because \n
+				status = subprocess.check_output(['ideviceinfo', '-k', 'PasswordProtected'], stderr=subprocess.PIPE).rstrip() #rstrip because \n
 				if status == 'true':
-					if not shown_password_prompt:
+					if not password_protected:
 						print("[ERROR]: Device is password protected - cannot continue")
-					shown_password_prompt = True
+					password_protected = True
 				elif status == 'false':
 					break
-			except Exception as e:
-				print(e)
+			except Exception, e:
+				pass
 
 		recovery_status = None
 		try:
-			recovery_status = subprocess.check_output(['irecovery', '-m', '-v'], stderr=subprocess.PIPE).decode('UTF-8').rstrip()
-		except Exception as e:
+			recovery_status = subprocess.check_output(['irecovery', '-m', '-v'], stderr=subprocess.PIPE)
+		except Exception, e:
 			pass # device not in recovery
-			#print("device not in recovery?")
 		
 		# add error checking
 		if recovery_status is not None:
@@ -123,13 +117,13 @@ def wait_for_device_connection():
 		# global UDID
 		# if local_UDID != UDID:
 		# 	UDID = local_UDID
-		device_name     = subprocess.check_output(['ideviceinfo', '-k', 'DeviceName'], stderr=subprocess.PIPE).decode('UTF-8').rstrip() #rstrip because \n
-		product_type    = subprocess.check_output(['ideviceinfo', '-k', 'ProductType'], stderr=subprocess.PIPE).decode('UTF-8').rstrip() #rstrip because \n
-		hardware_model  = subprocess.check_output(['ideviceinfo', '-k', 'HardwareModel'], stderr=subprocess.PIPE).decode('UTF-8').rstrip() #rstrip because \n
-		product_version = subprocess.check_output(['ideviceinfo', '-k', 'ProductVersion'], stderr=subprocess.PIPE).decode('UTF-8').rstrip() #rstrip because \n
+		device_name     = subprocess.check_output(['ideviceinfo', '-k', 'DeviceName'], stderr=subprocess.PIPE).rstrip() #rstrip because \n
+		product_type    = subprocess.check_output(['ideviceinfo', '-k', 'ProductType'], stderr=subprocess.PIPE).rstrip() #rstrip because \n
+		hardware_model  = subprocess.check_output(['ideviceinfo', '-k', 'HardwareModel'], stderr=subprocess.PIPE).rstrip() #rstrip because \n
+		product_version = subprocess.check_output(['ideviceinfo', '-k', 'ProductVersion'], stderr=subprocess.PIPE).rstrip() #rstrip because \n
 		print('[INFO]: Connected to {} ({}, {}) on {}'.format(device_name, product_type, hardware_model, product_version))
-	except Exception as e:
-		print(e)
+	except Exception, e:
+		pass
 	
 	global wait_period
 	print('[INFO]: Waiting ' + str(wait_period) + ' seconds before continuing...')
@@ -156,15 +150,10 @@ def runApp():
 
 def upload_disk_img():
 	#check if already mounted
-	out = subprocess.check_output(['ideviceimagemounter', '-l'], stderr=subprocess.PIPE)
+	out = subprocess.Popen(['ideviceimagemounter', '-l'], stdout=subprocess.PIPE, stderr=subprocess.PIPE).stdout.read()
 	if not out:
 		print("Uploading developer disk image")
-		# need error checking. check for files
-		try:
-			subprocess.Popen(['ideviceimagemounter', 'DeveloperDiskImage.dmg', 'DeveloperDiskImage.dmg.signature'], stdout=subprocess.PIPE, stderr=subprocess.PIPE).wait()
-		except Exception as e:
-			pass
-		
+		subprocess.Popen(['ideviceimagemounter', 'DeveloperDiskImage.dmg', 'DeveloperDiskImage.dmg.signature'], stdout=subprocess.PIPE, stderr=subprocess.PIPE).wait
 		time.sleep(1)
 
 while 1:
@@ -174,5 +163,4 @@ while 1:
 	
 
 	
-
 
