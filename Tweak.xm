@@ -41,8 +41,8 @@
 	%orig;
 	HBLogError(@"com.leftyfl1p.saigonautorunner.rebootrequested");
 
-	sleep(30);
-	exit(0);
+	// sleep(30);
+	// exit(0);
 }
 
 %end
