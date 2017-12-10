@@ -6,12 +6,16 @@ import threading
 
 # USER CONFIGURABLE
 application_bundle_identifier = 'com.leftyfl1p.saigonautorunner'
-wait_seconds = 10
+wait_seconds = 45
 # END USER CONFIGURABLE
 
 application_alive = False
 application_process = timeout_timer = UDID = None
-# write logging funcitons. regular vs fatal.
+
+count = 1
+
+def log(str):
+	print('[WATCHDOG]:', str)
 
 def reboot_device():
 	''' Normally we would just do "idevicediagnostics restart", however there seems to be a bug
@@ -19,7 +23,7 @@ def reboot_device():
 		it will not respond to any shutdown or restart commands. The work-around is to tell the device
 		to boot into and then back out of recovery mode.
 	'''
-	print('REBOOTING DEVICE')
+	log('REBOOTING DEVICE')
 	# subprocess.Popen(['idevicediagnostics', 'restart'], stdout=subprocess.PIPE, stderr=subprocess.PIPE).wait()
 	UDID = subprocess.check_output(['idevice_id', '-l'], stderr=subprocess.PIPE)
 
@@ -31,7 +35,7 @@ def reboot_device():
 		try:
 			status = subprocess.check_output(['irecovery', '-m', '-v'], stderr=subprocess.PIPE)
 			if 'Recovery Mode' in status:
-				print('Kicking device out of recovery')
+				log('Kicking device out of recovery')
 				subprocess.Popen(['irecovery', '-n'], stdout=subprocess.PIPE, stderr=subprocess.PIPE).wait()
 				time.sleep(5)
 				break
@@ -46,12 +50,15 @@ def check_application_alive():
 	'''
 	global application_alive, application_process
 	if not application_alive:
-		print("Application hasn't responded, rebooting")
+		log("Application hasn't responded, rebooting")
 		try:
 			application_process.kill()
 		except Exception, e:
 			pass
 		reboot_device()
+	else:
+		global count
+		count += 1
 
 def timeout_application_process():
 	''' Once saigon gets past the initial hang up of triple_fetch
@@ -60,13 +67,16 @@ def timeout_application_process():
 	'''
 	global application_process
 	application_process.kill()
-	print('Process timed out')
+	log('Process timed out')
 
 def run_application():
 	global application_alive, application_process, application_bundle_identifier, timeout_timer
 	application_alive = False
 
-	print('Opening application ' + application_bundle_identifier)
+	global count
+	print('*** BEGIN RUN #' + str(count) + ' ***')
+
+	log('Opening application ' + application_bundle_identifier)
 	application_process = subprocess.Popen(['idevicedebug', 'run', application_bundle_identifier], stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
 	
 	threading.Timer(15.0, check_application_alive).start()
@@ -77,19 +87,22 @@ def run_application():
 		application_alive = True
 		print(line.rstrip())
 		if 'com.leftyfl1p.saigonautorunner.rebootrequested' in line:
-			print ('Device requested reboot')
+			log('Device requested reboot')
 			reboot_device()
 		if 'com.leftyfl1p.saigonautorunner.trybuttondisabled' in line:
-			print('try button disabled. jailbroken?')
+			log('try button disabled. jailbroken?')
 		
 	application_process.stdout.close()
 	return_code = application_process.wait()
 	if return_code:
-		print('Application process ended')
+		log('Application process ended')
+
+		print('*** END RUN #' + str(count - 1) + ' ***\n\n')
+
 		timeout_timer.cancel()
 
 def wait_for_device_connection():
-	print('Waiting for device...')
+	log('Waiting for device...')
 	
 	shown_password_prompt = False
 	while 1:
@@ -99,7 +112,7 @@ def wait_for_device_connection():
 				status = subprocess.check_output(['ideviceinfo', '-k', 'PasswordProtected'], stderr=subprocess.PIPE).rstrip() #rstrip because \n
 				if status == 'true':
 					if not shown_password_prompt:
-						print('[ERROR]: Device is password protected - cannot continue')
+						log('[ERROR]: Device is password protected - cannot continue') # fatal
 					shown_password_prompt = True
 				elif status == 'false':
 					break
@@ -124,12 +137,12 @@ def wait_for_device_connection():
 		product_type    = subprocess.check_output(['ideviceinfo', '-k', 'ProductType'], stderr=subprocess.PIPE).rstrip() #rstrip because \n
 		hardware_model  = subprocess.check_output(['ideviceinfo', '-k', 'HardwareModel'], stderr=subprocess.PIPE).rstrip() #rstrip because \n
 		product_version = subprocess.check_output(['ideviceinfo', '-k', 'ProductVersion'], stderr=subprocess.PIPE).rstrip() #rstrip because \n
-		print('[INFO]: Connected to {} ({}, {}) on {}'.format(device_name, product_type, hardware_model, product_version))
+		log('Connected to {} ({}, {}) on {}'.format(device_name, product_type, hardware_model, product_version))
 	except Exception, e:
 		pass
 	
 	global wait_seconds
-	print('[INFO]: Waiting ' + str(wait_seconds) + ' seconds before continuing...')
+	log('Waiting ' + str(wait_seconds) + ' seconds before continuing...')
 	time.sleep(wait_seconds)
 
 
@@ -137,8 +150,8 @@ def upload_disk_img():
 	#check if already mounted
 	out = subprocess.check_output(['ideviceimagemounter', '-l'], stderr=subprocess.PIPE)
 	if not out:
-		print('Uploading developer disk image')
-		subprocess.Popen(['ideviceimagemounter', 'DeveloperDiskImage.dmg', 'DeveloperDiskImage.dmg.signature'], stdout=subprocess.PIPE, stderr=subprocess.PIPE).wait
+		log('Uploading developer disk image')
+		subprocess.Popen(['ideviceimagemounter', 'DeveloperDiskImage.dmg', 'DeveloperDiskImage.dmg.signature'], stdout=subprocess.PIPE, stderr=subprocess.PIPE).wait()
 		time.sleep(1)
 
 while 1:
